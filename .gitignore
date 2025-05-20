@@ -1,3 +1,32 @@
+# ---------------- data ignores
+*software
+*tmp*
+# ---------------- specific ignores
+*.idea
+*.DS_Store*
+*.VS*
+# ---------------- Cmake gitignore
+*CMakeLists.txt.user
+*CMakeCache.txt
+*CMakeFiles
+*CMakeScripts
+*Testing
+*Makefile
+*cmake_install.cmake
+*install_manifest.txt
+*compile_commands.json
+*CTestTestfile.cmake
+*_deps
+
+# ---------------- python gitignore
+
+*.ipynb_checkpoints
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
