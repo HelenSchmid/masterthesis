@@ -1,0 +1,6 @@
+*.pkl filter=lfs diff=lfs merge=lfs -text
+*.csv filter=lfs diff=lfs merge=lfs -text
+*.json filter=lfs diff=lfs merge=lfs -text
+
+manuscript/mmseqs2/promiscuous_esterases_mmseqs2.pkl filter=lfs diff=lfs merge=lfs -text
+
