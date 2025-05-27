@@ -1,4 +1,8 @@
 
+manuscript/data/*.csv
+manuscript/data/*.json
+manuscript/data/*.pkl
+
 
 # ---------------- data ignores
 *software
