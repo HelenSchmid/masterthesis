@@ -1,20 +1,3 @@
-﻿Name;CAS number;SMILES;# ToxCast Active;Total Assays;% ToxCast Active;Origin;Reason;Availability;Structure
-Tripropyl phosphate ;513-08-6;CCCOP(=O)(OCCC)OCCC;;;;Comptox Biosolids;3 same substituents;;Picture
-Tributyl phosphate ;126-73-8;CCCCOP(=O)(OCCCC)OCCCC;68/705;705;10;Comptox Biosolids;3 same substituents;;Picture
-Tris(2-ethylhexyl) phosphate;78-42-2;CCCCC(CC)COP(=O)(OCC(CC)CCCC)OCC(CC)CCCC;65/628;628;10;Comptox Biosolids;3 same substituents;;Picture
-Triisobutyl phosphate;126-71-6;CC(C)COP(=O)(OCC(C)C)OCC(C)C;15/428;428;4;Comptox Biosolids;3 same substituents;;Picture
-2-Ethylhexyl diphenyl phosphate;1241-94-7;CCCCC(CC)COP(=O)(OC1=CC=CC=C1)OC1=CC=CC=C1;138/546;546;25;Comptox Biosolids;Pretty similar to TPP;;Picture
-Bis(2-ethylhexyl) phosphate;298-07-7;CCCCC(CC)COP(O)(=O)OCC(CC)CCCC;158/471;471;34;Comptox Biosolids;2 same substituents;;Picture
-Mevinphos;7786-34-7;COC(=O)C=C(C)OP(=O)(OC)OC;22/642;642;3;Comptox Biosolids;Pretty different to TPP;;Picture
-Methylparaoxon;950-35-6;COP(=O)(OC)OC1=CC=C(C=C1)[N+]([O-])=O;24/239;239;10;Comptox similarity search to TPP;Pretty different to TPP;;Picture
-Tri-o-cresyl phosphate;78-30-8;CC1=C(OP(=O)(OC2=C(C)C=CC=C2)OC2=C(C)C=CC=C2)C=CC=C1;194/524;524;37;Comptox similarity search to TPP;3 same substituents;;Picture
-Phosphoric acid, tris(3-methylphenyl) ester;563-04-2;CC1=CC=CC(OP(=O)(OC2=CC(C)=CC=C2)OC2=CC(C)=CC=C2)=C1;28/306;306;9;Comptox similarity search to TPP;3 same substituents;;Picture
-Cresyl diphenyl phosphate;26444-49-5;CC1=CC=CC=C1OP(=O)(OC2=CC=CC=C2)OC3=CC=CC=C3;108/433;433;25;Comptox Biosolids;Pretty similar to TPP;;Picture
-(4-Isopropylphenyl) diphenyl phosphate;55864-04-5;CC(C)C1=CC=CC=C1OP(=O)(OC2=CC=CC=C2)OC3=CC=CC=C3;;;;;;;Picture
-tert-Butylphenyl diphenyl phosphate;56803-37-3;CC(C)(C)C1=CC=CC=C1OP(=O)(OC2=CC=CC=C2)OC3=CC=CC=C3;154/500;500;31;Comptox Biosolids;Pretty similar to TPP;;Picture
-Isodecyl diphenyl phosphate;29761-21-5;CC(C)CCCCCCCOP(=O)(OC1=CC=CC=C1)OC2=CC=CC=C2;130/469;469;28;Comptox Biosolids;Long aliphatic chain;;Picture
-Tris(2-chloroethyl) phosphate;115-96-8;ClCCOP(=O)(OCCCl)OCCCl;10/660;660;2;Comptox Biosolids;Only one type of substituent;;Picture
-Bis(2-chloroethyl) phosphate;3040-56-0;[O-]P(=O)(OCCCl)OCCCl;;;;Comptox Biosolids;Only one type of substituent;;Picture
-Bis(1-Chloropropan-2-yl) hydrogen phosphate;789440-10-4;CC(CCl)OP([O-])(=O)OC(C)CCl;;;;Comptox Biosolids;Only one type of substituent;;Picture
-Tris(2-chloroisopropyl)phosphate;13674-84-5;CC(CCl)OP(=O)(OC(C)CCl)OC(C)CCl;20/513;513;4;Comptox Biosolids;Only one type of substituent;;Picture
-Tris(1,3-dichloro-2-propyl) phosphate; 13674-87-8;ClCC(CCl)OP(=O)(OC(CCl)CCl)OC(CCl)CCl;226/779;779;29;Comptox Biosolids;Only one type of substituent;;Picture
+version https://git-lfs.github.com/spec/v1
+oid sha256:f071b25753ef0d1c3825b7191bb9e1c8da6f1928f8740f93faa8f08e35386581
+size 2740
