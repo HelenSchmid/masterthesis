@@ -1,0 +1,10 @@
+receptor = /nvme2/helen/masterthesis/filteringpipeline/vina/C3MYG0/C3MYG0.pdbqt
+ligand = /nvme2/helen/masterthesis/filteringpipeline/vina/TPP/TPP.pdbqt
+center_x = 8.684000015258789
+center_y = 3.265500068664551
+center_z = -9.60099983215332
+size_x = 10.0
+size_y = 10.0
+size_z = 10.0
+num_modes = 9
+exhaustiveness = 32
