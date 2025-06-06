@@ -4,14 +4,16 @@ from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
-from step import Step
+from steps.step import Step
 
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
 from biotite.structure.io.pdb import PDBFile
 from spyrmsd import rmsd
-from pathlib import Path
 from scipy.spatial.distance import cdist  
+from openbabel import openbabel as ob
+from openbabel import pybel
+import tempfile
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -47,60 +49,78 @@ def extract_two_ligands_from_pdb(pdb_path):
         raise ValueError("Expected exactly 2 ligands, found: {}".format(len(ligand_list)))
     return ligand_list[0], ligand_list[1]
 
-# Function to calculate adjacency matrix from coordinates and atomic numbers
-def calculate_adjacency_matrix(coords, threshold=2.0):
-    # Calculate pairwise distances between atoms
-    distances = cdist(coords, coords)
-    
-    # Create the adjacency matrix where distances below threshold indicate bonds
-    adjacency_matrix = (distances < threshold) & (distances > 0)  # Avoid self-bonds
-    return adjacency_matrix.astype(int)  # Convert to integer (0 or 1)
+def write_ligand_to_temp_pdb(ligand):
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdb")
+    pdb_file = pdb.PDBFile()
+    pdb_file.set_structure(ligand)
+    with open(tmp.name, "w") as f:
+        pdb_file.write(f)
+    return tmp.name
 
+def get_obabel_ligand_properties(pdb_path):
+    mol = next(pybel.readfile("pdb", str(pdb_path)))
+    mol.addh()  # Ensure consistent hydrogen handling
 
-def prepare_for_symmrmsd(ligand):
-    coords = struc.coord(ligand)
-    atomic_nums = np.array([element_to_atomic_number[el] for el in ligand.element])
-    adjacency = calculate_adjacency_matrix(coords)  # Create the adjacency matrix
+    atoms = list(mol.atoms)
+    N = len(atoms)
+
+    coords = np.array([atom.coords for atom in atoms])
+    atomic_nums = np.array([atom.atomicnum for atom in atoms])
+    adjacency = np.zeros((N, N), dtype=int)
+
+    for bond in ob.OBMolBondIter(mol.OBMol):
+        i = bond.GetBeginAtomIdx() - 1
+        j = bond.GetEndAtomIdx() - 1
+        adjacency[i, j] = 1
+        adjacency[j, i] = 1
+
     return coords, atomic_nums, adjacency
 
 
+
 class LigandRMSD(Step):
-    def __init__(self, pdb_file = str, output_dir =  str, num_threads=1): 
-        self.pdb_file = Path('/home/helen/cec_degrader/generalize/FilteringPipeline/ScreenedVariants/Biotite/P96084')    
-        self.output_dir = output_dir or None
+    def __init__(self, input_dir = str, output_dir =  str, num_threads=1): 
+        self.input_dir = Path(input_dir)   
+        self.input_dir.mkdir(parents=True, exist_ok=True) 
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.num_threads = num_threads or 1
 
-    def __execute(self, df: pd.DataFrame, tmp_dir: str) -> list:
+    def __execute(self,input_dir: str, tmp_dir: str) -> list:
 
         rmsd_values = []
 
-        #for pdb_file in self.pdb_file: 
-
-            # Check if the directory exists
-            #if not pdb_file.exists() or not pdb_file.is_dir():
-            #   raise ValueError(f"The provided path {pdb_file} is not a valid directory.")
-
         # Get all PDB files in the directory
-        pdb_files = list(self.pdb_file.glob("*.pdb"))  # Use glob to match all .pdb files
+        pdb_files = list(self.input_dir.glob("*.pdb"))  # Use glob to match all .pdb files
         
         for pdb_file_path in pdb_files: 
 
-            ligand_a, ligand_b = extract_two_ligands_from_pdb(pdb_file_path)
-            coords_a, atomic_nums_a, adj_a = prepare_for_symmrmsd(ligand_a)
-            coords_b, atomic_nums_b, adj_b = prepare_for_symmrmsd(ligand_b)
+            ligand1, ligand2 = extract_two_ligands_from_pdb(pdb_file_path)
 
-            symm_rmsd_value = rmsd.symmrmsd(
-                coordsref=coords_a,                 # Reference coordinated
-                coords=coords_b,                    # Coordinates (one set or multiple sets)
-                apropsref=atomic_nums_a,            # Reference atomic properties
-                aprops=atomic_nums_b,               # Atomic properties
-                amref=adj_a,                        # Reference adjacency matrix
-                am=adj_b,                           # Adjacency matrix
-                center=False,                       # Flag to center molecules at origin
-                minimize=False                      # Flag to compute minimum RMSD
-            )
+            ligand1_path = write_ligand_to_temp_pdb(ligand1)
+            ligand2_path = write_ligand_to_temp_pdb(ligand2)
+
+            coords1, atomic_nums1, adj1 = get_obabel_ligand_properties(ligand1_path)
+            coords2, atomic_nums2, adj2 = get_obabel_ligand_properties(ligand2_path)
+
+
+            try:
+                if coords1.shape != coords2.shape:
+                    raise ValueError("Mismatched ligand atom count.")
+                
+                symm_rmsd_value = rmsd.symmrmsd(
+                    coordsref=coords1,                 # Reference coordinated
+                    coords=coords2,                    # Coordinates (one set or multiple sets)
+                    apropsref=atomic_nums1,            # Reference atomic properties
+                    aprops=atomic_nums2,               # Atomic properties
+                    amref=adj1,                        # Reference adjacency matrix
+                    am=adj2,                           # Adjacency matrix
+                    center=False,                       # Flag to center molecules at origin
+                    minimize=False                      # Flag to compute minimum RMSD
+                )
+            except Exception as e:
+                print(f"Failed RMSD calculation for pair: {ligand1_path}, {ligand2_path} — {e}")
+                continue
 
             # Store the RMSD value in a dictionary to append later
             pdb_file_name = pdb_file_path.name
@@ -110,7 +130,7 @@ class LigandRMSD(Step):
             docked_structure2_name = ligand_names[1] if len(ligand_names) > 1 else None
 
             rmsd_values.append({
-                'Entry': 'P96084', 
+                'Entry': docked_structure1_name.split('_')[0], 
                 'pdb_file': pdb_file_path.name,  # Store the name of the PDB file
                 'docked_structure1' : docked_structure1_name, 
                 'docked_structure2' : docked_structure2_name, 
@@ -120,28 +140,14 @@ class LigandRMSD(Step):
         # Convert the list of dictionaries into a DataFrame
         rmsd_df = pd.DataFrame(rmsd_values)
 
-        # Save the DataFrame as a pickle file
-        csv_file = tmp_dir / "ligand_rmsd.csv"
-        rmsd_df.to_csv(csv_file)
+        # Save the DataFrame as a csv file
+        rmsd_df = pd.DataFrame(rmsd_values)
+        csv_file = Path(tmp_dir) / "ligand_rmsd.csv"
+        rmsd_df.to_csv(csv_file, index=False)
         logger.info(f"Ligand RMSD results saved to: {csv_file}")
+        return rmsd_df
 
-        return csv_file
 
-    def execute(self, df: pd.DataFrame) -> pd.DataFrame:
-        if self.output_dir:
-            if self.num_threads > 1:
-                output_filenames = []
-                df_list = np.array_split(df, self.num_threads)
-                for df_chunk in df_list:
-                    output_filenames += self.__execute(df_chunk, self.output_dir)
-                    
-                df['ligandRMSD_dir'] = output_filenames
-                return df
-            
-            else:
-                output_filenames = self.__execute(df, self.output_dir)
-                df['ligandRMSD_dir'] = output_filenames
-                return df
-        else:
-            print('No output directory provided')
+    def execute(self, input_path: str | Path) -> pd.DataFrame:
+        return self.__execute(input_path, self.output_dir)
 

@@ -119,7 +119,7 @@ def split_ligands_and_combine(protein_path, ligands_path, entry_name, output_dir
             combined_atoms = new_combined
         
         # Save the combined structure to a PDB file
-        output_path = output_dir / f"{entry_name}_vina_protein_ligand_{i}.pdb"
+        output_path = output_dir / f"{entry_name}_{i}_vina.pdb"
         Path(output_path).write_text('\n'.join(combined_atoms) + '\nEND\n')
         output_paths.append(str(output_path))
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 import pandas as pd
+from typing import Union
+from pathlib import Path
 
 
 class Pipeline():
@@ -18,6 +20,18 @@ class Pipeline():
     def __rlshift__(self, other: pd.DataFrame) -> pd.DataFrame:
         return self.execute(other)
         
+class Pipeline:
+    def __init__(self, *steps: Step):
+        self.steps = list(steps)
+
+    def execute(self, input_data: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
+        for step in self.steps:
+            input_data = step.execute(input_data)
+        return input_data
+
+    def __rlshift__(self, other: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
+        return self.execute(other)
+
 
 class Step():
     
@@ -34,3 +48,12 @@ class Step():
         """
         return self.execute(other)
     
+class Step:
+    def execute(self, input_data: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
+        return pd.DataFrame()
+
+    def __rshift__(self, other: 'Step') -> 'Pipeline':
+        return Pipeline(self, other)
+
+    def __rlshift__(self, other: Union[pd.DataFrame, str, Path]) -> pd.DataFrame:
+        return self.execute(other)
