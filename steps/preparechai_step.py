@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from Bio.PDB import MMCIFParser
 from Bio.PDB import PDBIO
-from pathlib import Path
+from Bio.PDB.Polypeptide import is_aa
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
