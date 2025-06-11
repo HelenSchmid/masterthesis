@@ -1,10 +1,14 @@
-import os
+from steps.step import Step
+
+
 import pandas as pd
 from pathlib import Path
 import logging
 from multiprocessing.dummy import Pool as ThreadPool
 import numpy as np
-from steps.step import Step
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os 
 
 import biotite.structure as struc
 import biotite.structure.io.pdb as pdb
@@ -76,78 +80,170 @@ def get_obabel_ligand_properties(pdb_path):
 
     return coords, atomic_nums, adjacency
 
+def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
+    '''
+    Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
+    '''   
+    os.makedirs(output_dir, exist_ok=True)
+
+    for entry, group in rmsd_df.groupby('Entry'):
+        # Get all docked structures for the entry
+        docked_proteins = list(set(group['docked_structure1']) | set(group['docked_structure2']))
+        docked_proteins = sorted(docked_proteins, key=lambda x: (0 if "chai" in x.lower() else 1, x))
+    
+        rmsd_matrix = pd.DataFrame(np.nan, index=docked_proteins, columns=docked_proteins)
+
+        for _, row in group.iterrows():
+            l1, l2, rmsd = row['docked_structure1'], row['docked_structure2'], row['ligand_rmsd']
+            rmsd_matrix.loc[l1, l2] = rmsd
+            rmsd_matrix.loc[l2, l1] = rmsd
+
+
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(rmsd_matrix, annot=False, cmap="viridis", square=True, cbar=True)
+        plt.title(f"RMSD Heatmap: {entry}", fontsize=14)
+        plt.xlabel("Docked Structures")
+        plt.ylabel("Docked Structures")
+        plt.xticks(rotation=45, ha='right', fontsize=8)
+        plt.yticks(rotation=0, fontsize=8)
+        plt.tight_layout()
+
+        filename = f"{entry.replace('/', '_')}_heatmap.png"
+        plt.savefig(os.path.join(output_dir, filename))
+        plt.close()
+
+def select_best_docked_structures(rmsd_df: pd.DataFrame, output_dir: Path | str = None) -> pd.DataFrame:
+    """
+    For each Entry, selects the docked structure with the lowest average RMSD to all others.
+    """
+    best_structures = []
+
+    for entry, group in rmsd_df.groupby("Entry"):
+        # Unique structure names
+        structures = list(set(group['docked_structure1']).union(group['docked_structure2']))
+        structures.sort()
+
+        # Create empty symmetric matrix
+        rmsd_matrix = pd.DataFrame(np.nan, index=structures, columns=structures)
+
+        for _, row in group.iterrows():
+            s1, s2, r = row['docked_structure1'], row['docked_structure2'], row['ligand_rmsd']
+            rmsd_matrix.loc[s1, s2] = r
+            rmsd_matrix.loc[s2, s1] = r
+
+        # Fill diagonal with 0
+        np.fill_diagonal(rmsd_matrix.values, 0)
+
+        # Calculate mean RMSD for each structure
+        avg_rmsd = rmsd_matrix.mean(axis=1)
+
+        best_structure = avg_rmsd.idxmin()
+        squidly_residues = rmsd_df.loc[rmsd_df['Entry'] == entry, 'Squidly_CR_Position']
+
+        best_structures.append({
+            'Entry': entry,
+            #'pdb_file': rmsd_df.loc[rmsd_df['Entry'] == entry, 'pdb_file'], 
+            'best_structure': best_structure,
+            'avg_rmsd': avg_rmsd[best_structure],
+            'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
+        })
+
+    best_df = pd.DataFrame(best_structures)
+
+    if output_dir:
+        output_path = Path(output_dir) / "best_docked_structures.csv"
+        best_df.to_csv(output_path, index=False)
+        logger.info(f"Best docked structures saved to: {output_path}")
+
+    return best_df
+
 
 
 class LigandRMSD(Step):
-    def __init__(self, input_dir = str, output_dir =  str, num_threads=1): 
+    def __init__(self, entry_col = 'Entry', input_dir: str = '', output_dir: str = '', visualize_heatmaps = False,  num_threads=1): 
+        self.entry_col = entry_col
         self.input_dir = Path(input_dir)   
-        self.input_dir.mkdir(parents=True, exist_ok=True) 
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.visualize_heatmaps = visualize_heatmaps
         self.num_threads = num_threads or 1
 
-    def __execute(self,input_dir: str, tmp_dir: str) -> list:
+    def __execute(self, df) -> list:
 
         rmsd_values = []
 
-        # Get all PDB files in the directory
-        pdb_files = list(self.input_dir.glob("*.pdb"))  # Use glob to match all .pdb files
-        
-        for pdb_file_path in pdb_files: 
+        # Iterate through all subdirectories in the input directory
+        for sub_dir in self.input_dir.iterdir():
+            print(f"Processing subdirectory: {sub_dir}")
 
-            ligand1, ligand2 = extract_two_ligands_from_pdb(pdb_file_path)
+            # Process all PDB files in subdirectories
+            for pdb_file_path in sub_dir.glob("*.pdb"):
 
-            ligand1_path = write_ligand_to_temp_pdb(ligand1)
-            ligand2_path = write_ligand_to_temp_pdb(ligand2)
+                ligand1, ligand2 = extract_two_ligands_from_pdb(pdb_file_path)
 
-            coords1, atomic_nums1, adj1 = get_obabel_ligand_properties(ligand1_path)
-            coords2, atomic_nums2, adj2 = get_obabel_ligand_properties(ligand2_path)
+                ligand1_path = write_ligand_to_temp_pdb(ligand1)
+                ligand2_path = write_ligand_to_temp_pdb(ligand2)
 
+                coords1, atomic_nums1, adj1 = get_obabel_ligand_properties(ligand1_path)
+                coords2, atomic_nums2, adj2 = get_obabel_ligand_properties(ligand2_path)
 
-            try:
-                if coords1.shape != coords2.shape:
-                    raise ValueError("Mismatched ligand atom count.")
+                try:
+                    if coords1.shape != coords2.shape:
+                        raise ValueError("Mismatched ligand atom count.")
+                    
+                    symm_rmsd_value = rmsd.symmrmsd(
+                        coordsref=coords1,                 # Reference coordinated
+                        coords=coords2,                    # Coordinates (one set or multiple sets)
+                        apropsref=atomic_nums1,            # Reference atomic properties
+                        aprops=atomic_nums2,               # Atomic properties
+                        amref=adj1,                        # Reference adjacency matrix
+                        am=adj2,                           # Adjacency matrix
+                        center=False,                      # Flag to center molecules at origin
+                        minimize=False                     # Flag to compute minimum RMSD
+                    )
+                except Exception as e:
+                    print(f"Failed RMSD calculation for pair: {ligand1_path}, {ligand2_path} — {e}")
+                    continue
+
+                # Store the RMSD value in a dictionary to append later
+                pdb_file_name = pdb_file_path.name
+                structure_names = pdb_file_name.replace(".pdb", "").split("__")
                 
-                symm_rmsd_value = rmsd.symmrmsd(
-                    coordsref=coords1,                 # Reference coordinated
-                    coords=coords2,                    # Coordinates (one set or multiple sets)
-                    apropsref=atomic_nums1,            # Reference atomic properties
-                    aprops=atomic_nums2,               # Atomic properties
-                    amref=adj1,                        # Reference adjacency matrix
-                    am=adj2,                           # Adjacency matrix
-                    center=False,                       # Flag to center molecules at origin
-                    minimize=False                      # Flag to compute minimum RMSD
-                )
-            except Exception as e:
-                print(f"Failed RMSD calculation for pair: {ligand1_path}, {ligand2_path} — {e}")
-                continue
+                docked_structure1_name = structure_names[0] if len(structure_names) > 0 else None
+                docked_structure2_name = structure_names[1] if len(structure_names) > 1 else None
 
-            # Store the RMSD value in a dictionary to append later
-            pdb_file_name = pdb_file_path.name
-            ligand_names = pdb_file_name.replace(".pdb", "").split("__")
+                entry_name = docked_structure1_name.split('_')[0]
+                squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
 
-            docked_structure1_name = ligand_names[0] if len(ligand_names) > 0 else None
-            docked_structure2_name = ligand_names[1] if len(ligand_names) > 1 else None
-
-            rmsd_values.append({
-                'Entry': docked_structure1_name.split('_')[0], 
-                'pdb_file': pdb_file_path.name,  # Store the name of the PDB file
-                'docked_structure1' : docked_structure1_name, 
-                'docked_structure2' : docked_structure2_name, 
-                'ligand_rmsd': symm_rmsd_value  # Store the calculated RMSD value
-            })
+                rmsd_values.append({
+                    'Entry': entry_name, 
+                    'pdb_file': pdb_file_path.name,  # Store the name of the PDB file
+                    'docked_structure1' : docked_structure1_name, 
+                    'docked_structure2' : docked_structure2_name, 
+                    'ligand_rmsd': symm_rmsd_value,   # Store the calculated RMSD value
+                    'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
+                })
 
         # Convert the list of dictionaries into a DataFrame
         rmsd_df = pd.DataFrame(rmsd_values)
 
+
+        # If heatmaps are to be visualized, call the visualization function
+        if self.visualize_heatmaps:
+            heatmap_output_dir = Path(self.output_dir) / 'ligandRMSD_heatmaps'
+            os.makedirs(heatmap_output_dir, exist_ok=True)
+            visualize_rmsd_by_entry(rmsd_df, output_dir=heatmap_output_dir)
+
+        # Select the best docked structures based on RMSD
+        select_best_docked_structures(rmsd_df, output_dir=self.output_dir)
+
         # Save the DataFrame as a csv file
-        rmsd_df = pd.DataFrame(rmsd_values)
-        csv_file = Path(tmp_dir) / "ligand_rmsd.csv"
+        csv_file = Path(self.output_dir) / "ligand_rmsd.csv"
         rmsd_df.to_csv(csv_file, index=False)
         logger.info(f"Ligand RMSD results saved to: {csv_file}")
         return rmsd_df
 
 
-    def execute(self, input_path: str | Path) -> pd.DataFrame:
-        return self.__execute(input_path, self.output_dir)
-
+    def execute(self, df) -> pd.DataFrame:
+        self.input_dir = Path(self.input_dir)
+        return self.__execute(df)

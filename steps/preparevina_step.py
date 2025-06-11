@@ -68,6 +68,7 @@ def clean_vina_ligand_file(input_path, output_path=None):
 
                 # Change ATOM to HETATM
                 parts[0:6] = 'HETATM'
+                parts[21] = 'B'
 
                 # Reassemble the line with the new atom name
                 new_line = ''.join(parts)
@@ -108,6 +109,7 @@ def split_ligands_and_combine(protein_path, ligands_path, entry_name, output_dir
     # Combine and write each protein + ligand combo
     for i, ligand_atoms in enumerate(ligand_blocks, start=1):
         combined_atoms = protein_atoms + ligand_atoms
+
         if renumber_atoms:
             serial = 1
             new_combined = []

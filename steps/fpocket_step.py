@@ -1,4 +1,4 @@
-from step import Step
+from steps.step import Step
 import pandas as pd
 from tempfile import TemporaryDirectory
 from pathlib import Path
@@ -9,8 +9,9 @@ import os
 import subprocess
 
 import shutil
+import uuid
 
-#fpocket -f /home/helen/cec_degrader/generalize/alphafold_structures/A1RRK1_structure.pdb
+# How to run fpocket in terminal: fpocket -f /home/helen/cec_degrader/generalize/alphafold_structures/A1RRK1_structure.pdb
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -26,30 +27,46 @@ class Fpocket(Step):
         
         def run_fpocket(row):
             pdb_path = Path(row[self.pdb_col])
+
             if not pdb_path.exists():
                 logger.warning(f"PDB file not found: {pdb_path}")
                 return pd.Series({"fpocket_dir": None})
 
             logger.info(f"Running fpocket on {pdb_path.name}")
-            result = subprocess.run(["fpocket", "-f", str(pdb_path), "-M", 3], capture_output=True, text=True)
+
+            # Run fpocket in the directory where the PDB file is located
+            run_dir = pdb_path.parent
+            print(f"run_dir: {run_dir}")
+
+            result = subprocess.run(
+                ["fpocket", "-f", str(pdb_path), "-M", '3'],
+                cwd=run_dir,
+                capture_output=True,
+                text=True
+            )
+            logger.info(f"STDOUT:\n{result.stdout}")
+            logger.error(f"STDERR:\n{result.stderr}")   
 
             if result.returncode != 0:
                 logger.error(f"fpocket failed on {pdb_path.name}:\n{result.stderr}")
                 return pd.Series({"fpocket_dir": None})
 
-            # Default output directory from fpocket
-            default_out = pdb_path.with_suffix('').as_posix() + "_out"
-            out_dir = Path(default_out)
-
-            if not out_dir.exists():
-                logger.warning(f"fpocket output directory not found: {out_dir}")
+            # fpocket should create <name>_out folder in the same directory as the input PDB
+            expected_out_dir = run_dir / f"{pdb_path.stem}_out"
+            if not expected_out_dir.exists():
+                logger.warning(f"fpocket output directory not found: {expected_out_dir}")
                 return pd.Series({"fpocket_dir": None})
 
-            # Move to designated output directory
+            # Move to final output location
             final_out = self.output_dir / f"{pdb_path.stem}_fpocket_out"
             if final_out.exists():
                 shutil.rmtree(final_out)
-            shutil.move(str(out_dir), str(final_out))
+
+            try:
+                shutil.move(str(expected_out_dir), str(final_out))
+            except Exception as e:
+                logger.error(f"Failed to move {expected_out_dir} to {final_out}: {e}")
+                return pd.Series({"fpocket_dir": None})
 
             return pd.Series({"fpocket_dir": str(final_out)})
 

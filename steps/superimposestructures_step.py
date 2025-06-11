@@ -68,15 +68,15 @@ def get_residue_ids(structure):
     return set(zip(structure.res_id, structure.ins_code))
 
 
-def write_structure_to_file(combined, output_dir, name, key1, key2):
+def write_structure_to_file(combined, output_dir, entry_name, key1, key2):
     
+    # Create output directory 
+    output_dir = Path(output_dir) / entry_name
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     # Specify output path
     key = f"{key1}__{key2}"
     output_path = output_dir / f"{key}.pdb"
-
-    # Create output directory 
-    output_dir = Path(f'{name}_vs_{name}')
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Write the combined structure to a PDB file
     pdb_file = pdb.PDBFile()
@@ -87,70 +87,77 @@ def write_structure_to_file(combined, output_dir, name, key1, key2):
     return str(output_path)
 
 
-def superimpose_within_same_docked_structure(protein_dict, ligand_dict, name, output_dir):
-            keys = list(protein_dict.keys())
+def superimpose_within_same_docked_structure(protein_dict, ligand_dict, entry_name, output_dir):
+    
+    output_paths = []
+    keys = list(protein_dict.keys())
 
-            for i in range(len(keys)):
-                for j in range(i+1, len(keys)):
-                    key1, key2 = keys[i], keys[j]
-                    try: 
-                        ref_structure = protein_dict[key1]
-                        ref_ligand = ligand_dict[key1]
-                        mov_structure = protein_dict[key2]
-                        mov_ligand = ligand_dict[key2]
+    for i in range(len(keys)):
+        for j in range(i+1, len(keys)):
+            key1, key2 = keys[i], keys[j]
+            try: 
+                ref_structure = protein_dict[key1]
+                ref_ligand = ligand_dict[key1]
+                mov_structure = protein_dict[key2]
+                mov_ligand = ligand_dict[key2]
 
-                        aligned, transform, _, _ = struc.superimpose_homologs(ref_structure, mov_structure)
-                        aligned.chain_id[:] = "B"
-                        ligand_aligned = transform.apply(mov_ligand)
-                        ligand_aligned.chain_id[:] = "L"
+                aligned, transform, _, _ = struc.superimpose_homologs(ref_structure, mov_structure)
+                aligned.chain_id[:] = "B"
+                ligand_aligned = transform.apply(mov_ligand)
+                ligand_aligned.chain_id[:] = "L"
 
-                        ref_structure.chain_id[:] = "A"
-                        ref_ligand.chain_id[:] = "T"
+                ref_structure.chain_id[:] = "A"
+                ref_ligand.chain_id[:] = "T"
 
-                        combined = struc.concatenate([ref_structure, aligned, ref_ligand, ligand_aligned])
-                        combined = truncate_residue_names(combined)
-                        combined = truncate_atom_names(combined)
+                combined = struc.concatenate([ref_structure, aligned, ref_ligand, ligand_aligned])
+                combined = truncate_residue_names(combined)
+                combined = truncate_atom_names(combined)
 
-                        write_structure_to_file(combined, output_dir, name, key1, key2)   
+                output_paths.append(write_structure_to_file(combined, output_dir, entry_name, key1, key2))
+            
+            except Exception as e:
+                print(f"Failed {entry_name} {key1} vs {key2}: {e}")
+            
+    return output_paths
+
+
+def superimpose_different_docked_structure(protein_1_dict, ligand_1_dict, protein_2_dict, ligand_2_dict, entry_name, output_dir):
+
+    output_paths = []
+
+    for structure1_key, protein_1_structure in protein_1_dict.items():
+        protein_1_structure.chain_id[:] = "A"
+        ligand1 = ligand_1_dict[structure1_key]
+
+        for structure2_key, protein_2_structure in protein_2_dict.items():
+            
+            try:
+                # Superimpose structure 2 onto structure 1
+                structure2_aligned, transform, _, _ = struc.superimpose_homologs(protein_1_structure, protein_2_structure)
+                structure2_aligned.chain_id[:] = "B"                
+                            
+                # Align ligands of structure 1 using the same transformation
+                ligand2 = ligand_2_dict[structure2_key] 
+                ligand2_aligned = transform.apply(ligand2)  # Apply the transformation
+                ligand2_aligned.chain_id[:] = "V"
+
+                
+                combined = struc.concatenate([
+                    protein_1_structure,
+                    structure2_aligned, 
+                    ligand2_aligned, 
+                    ligand1
+                ])
+                
+                combined = truncate_residue_names(combined)
+                combined = truncate_atom_names(combined)
+
+                output_paths.append(write_structure_to_file(combined, output_dir, entry_name, structure1_key, structure2_key))
                     
-                    except Exception as e:
-                        print(f"Failed {name}-{name} {key1} vs {key2}: {e}")
-
-
-def superimpose_different_docked_structure(protein_1_dict, ligand_1_dict, protein_2_dict, ligand_2_dict, name, output_dir):
-
-            for structure1_key, protein_1_structure in protein_1_dict.items():
-                protein_1_structure.chain_id[:] = "A"
-                ligand1 = ligand_1_dict[structure1_key]
-
-                for structure2_key, protein_2_structure in protein_2_dict.items():
-                                    
-                    try:
-                        # Superimpose structure 2 onto structure 1
-                        structure2_aligned, transform, _, _ = struc.superimpose_homologs(protein_1_structure, protein_2_structure)
-                        structure2_aligned.chain_id[:] = "B"                
-                                    
-                        # Align ligands of structure 1 using the same transformation
-                        ligand2 = ligand_2_dict[structure2_key] 
-                        ligand2_aligned = transform.apply(ligand2)  # Apply the transformation
-                        ligand2_aligned.chain_id[:] = "V"
-
-                        
-                        combined = struc.concatenate([
-                            protein_1_structure,
-                            structure2_aligned, 
-                            ligand2_aligned, 
-                            ligand1
-                        ])
-                        
-                        combined = truncate_residue_names(combined)
-                        combined = truncate_atom_names(combined)
-
-                        write_structure_to_file(combined, output_dir, name, structure1_key, structure2_key)
-                    
-
-                    except Exception as e:
-                        print(f"Failed {name}-{name} {structure1_key} vs {structure2_key}: {e}")
+            except Exception as e:
+                print(f"Failed {entry_name} {structure1_key} vs {structure2_key}: {e}")
+            
+    return output_paths
 
 
 
@@ -169,6 +176,8 @@ class SuperimposeStructures(Step):
         all_output_paths = []
 
         for _, row in df.iterrows():
+
+            entry_name = row['Entry']
             structure_1 = {}
             structure_1_ligands = {}
             structure_2 = {}
@@ -211,14 +220,10 @@ class SuperimposeStructures(Step):
                     logger.error(f"Error processing {structure_2_path}: {e}")
 
             # Superimpose only within this row's proteins
-            superimpose_within_same_docked_structure(structure_1, structure_1_ligands, self.name1, self.output_dir)
-            superimpose_within_same_docked_structure(structure_2, structure_2_ligands, self.name2, self.output_dir)
-            superimpose_different_docked_structure(structure_1, structure_1_ligands, structure_2, structure_2_ligands, self.name2, self.output_dir)
-
-            # Optional: collect output files if you want to return them
-            for file in self.output_dir.glob("*.pdb"):
-                row_output_paths.append(str(file))
-
+            row_output_paths = []
+            row_output_paths += superimpose_within_same_docked_structure(structure_1, structure_1_ligands, entry_name, self.output_dir)
+            row_output_paths += superimpose_within_same_docked_structure(structure_2, structure_2_ligands, entry_name, self.output_dir)
+            row_output_paths += superimpose_different_docked_structure(structure_1, structure_1_ligands, structure_2, structure_2_ligands, entry_name, self.output_dir)
             all_output_paths.append(row_output_paths)
 
         return all_output_paths
