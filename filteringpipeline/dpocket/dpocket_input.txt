@@ -1,3 +1,0 @@
-/nvme2/helen/masterthesis/filteringpipeline/preparedfiles/A1RRK1_1_vina.pdb LIG
-/nvme2/helen/masterthesis/filteringpipeline/preparedfiles/P95862_2_vina.pdb LIG
-

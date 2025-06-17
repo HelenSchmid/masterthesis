@@ -312,7 +312,6 @@ class GeometricFiltering(Step):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.preparedfiles_dir = Path(preparedfiles_dir)
-        self.structure = None
 
 
     def __execute(self, df: pd.DataFrame, tmp_dir: str) -> list:
