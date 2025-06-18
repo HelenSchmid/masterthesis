@@ -1,6 +1,5 @@
 from steps.step import Step
 
-
 import pandas as pd
 from pathlib import Path
 import logging
@@ -36,6 +35,25 @@ element_to_atomic_number = {
     "Th": 90, "Pa": 91, "U": 92
 }
 
+
+# Global plot style
+plt.rcParams['svg.fonttype'] = 'none'  # Ensure text is saved as text
+plt.rcParams['figure.figsize'] = (3,3)
+sns.set(rc={'figure.figsize': (3,3), 'font.family': 'sans-serif', 'font.sans-serif': 'DejaVu Sans', 'font.size': 12}, 
+        style='ticks')
+
+def clean_plt(ax):
+    ax.tick_params(direction='out', length=2, width=1.0)
+    ax.spines['bottom'].set_linewidth(1.0)
+    ax.spines['top'].set_linewidth(0)
+    ax.spines['left'].set_linewidth(1.0)
+    ax.spines['right'].set_linewidth(0)
+    ax.tick_params(labelsize=10.0)
+    ax.tick_params(axis='x', which='major', pad=2.0)
+    ax.tick_params(axis='y', which='major', pad=2.0)
+    return ax
+
+
 def extract_two_ligands_from_pdb(pdb_path):
     with open(pdb_path, 'r') as f:
         pdb_file = pdb.PDBFile.read(f)
@@ -53,6 +71,7 @@ def extract_two_ligands_from_pdb(pdb_path):
         raise ValueError("Expected exactly 2 ligands, found: {}".format(len(ligand_list)))
     return ligand_list[0], ligand_list[1]
 
+
 def write_ligand_to_temp_pdb(ligand):
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdb")
     pdb_file = pdb.PDBFile()
@@ -60,6 +79,7 @@ def write_ligand_to_temp_pdb(ligand):
     with open(tmp.name, "w") as f:
         pdb_file.write(f)
     return tmp.name
+
 
 def get_obabel_ligand_properties(pdb_path):
     mol = next(pybel.readfile("pdb", str(pdb_path)))
@@ -80,6 +100,7 @@ def get_obabel_ligand_properties(pdb_path):
 
     return coords, atomic_nums, adjacency
 
+
 def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
     '''
     Visualizes RMSD values as heatmaps for each entry in the resulting dataframe.
@@ -98,7 +119,6 @@ def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
             rmsd_matrix.loc[l1, l2] = rmsd
             rmsd_matrix.loc[l2, l1] = rmsd
 
-
         plt.figure(figsize=(6, 5))
         sns.heatmap(rmsd_matrix, annot=False, cmap="viridis", square=True, cbar=True)
         plt.title(f"RMSD Heatmap: {entry}", fontsize=14)
@@ -112,50 +132,109 @@ def visualize_rmsd_by_entry(rmsd_df, output_dir="ligandRMSD_heatmaps"):
         plt.savefig(os.path.join(output_dir, filename))
         plt.close()
 
-def select_best_docked_structures(rmsd_df: pd.DataFrame, output_dir: Path | str = None) -> pd.DataFrame:
+
+def get_tool_from_structure_name(structure_name: str) -> str:
     """
-    For each Entry, selects the docked structure with the lowest average RMSD to all others.
+    Extracts the docking tool name from a structure string (e.g., 'Q97WW0_1_vina' -> 'vina').
+    Assumes the tool is the last segment after the last underscore.
+    """
+    if '_' in structure_name:
+        return structure_name.split('_')[-1]
+    return "UNKNOWN_tool" # Fallback if format doesn't match
+
+
+def select_best_docked_structures(rmsd_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    For each Entry, selects the best docked structure for each tool. Defined as structure with the lowest 
+    average RMSD to all structures from same docking tool. 
     """
     best_structures = []
 
-    for entry, group in rmsd_df.groupby("Entry"):
-        # Unique structure names
-        structures = list(set(group['docked_structure1']).union(group['docked_structure2']))
-        structures.sort()
+    # Filter the DataFrame to only include intra-tool RMSD comparisons
+    intra_tool_rmsd_df = rmsd_df[rmsd_df['tool1'] == rmsd_df['tool2']].copy()
+    intra_tool_rmsd_df['tool'] = intra_tool_rmsd_df['tool1']
 
-        # Create empty symmetric matrix
+    # Group by both 'Entry' and 'tool' on the filtered df
+    for (entry, tool), group in intra_tool_rmsd_df.groupby(["Entry", "tool"]):
+        # Extract unique structure names within this specific Entry-tool group
+        structures = list(set(group['docked_structure1']).union(group['docked_structure2']))
+        structures.sort() # Ensure consistent order for matrix indexing
+
         rmsd_matrix = pd.DataFrame(np.nan, index=structures, columns=structures)
 
+        # Populate the RMSD matrix
         for _, row in group.iterrows():
             s1, s2, r = row['docked_structure1'], row['docked_structure2'], row['ligand_rmsd']
             rmsd_matrix.loc[s1, s2] = r
-            rmsd_matrix.loc[s2, s1] = r
+            rmsd_matrix.loc[s2, s1] = r # Fill symmetric entry
 
-        # Fill diagonal with 0
+        # Fill diagonal with 0 (RMSD of a structure to itself is 0)
         np.fill_diagonal(rmsd_matrix.values, 0)
-
-        # Calculate mean RMSD for each structure
+        
+        # Calculate mean RMSD 
         avg_rmsd = rmsd_matrix.mean(axis=1)
+        
+        # Drop rows (structures) from avg_rmsd that are all NaNs (meaning no valid comparisons)
+        avg_rmsd = avg_rmsd.dropna()
 
-        best_structure = avg_rmsd.idxmin()
+        if avg_rmsd.empty:
+            logger.warning(f"No valid RMSD averages for Entry: {entry}, tool: {tool}. Skipping.")
+            continue # Skip if no valid averages could be calculated
+
+        # Select the structure with the lowest average RMSD
+        best_structure_name = avg_rmsd.idxmin()
+
         squidly_residues = rmsd_df.loc[rmsd_df['Entry'] == entry, 'Squidly_CR_Position']
 
         best_structures.append({
             'Entry': entry,
-            #'pdb_file': rmsd_df.loc[rmsd_df['Entry'] == entry, 'pdb_file'], 
-            'best_structure': best_structure,
-            'avg_rmsd': avg_rmsd[best_structure],
+            'tool': tool, 
+            'best_structure': best_structure_name,
+            'avg_rmsd': avg_rmsd[best_structure_name],
             'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
         })
 
     best_df = pd.DataFrame(best_structures)
 
-    if output_dir:
-        output_path = Path(output_dir) / "best_docked_structures.csv"
-        best_df.to_csv(output_path, index=False)
-        logger.info(f"Best docked structures saved to: {output_path}")
-
     return best_df
+
+
+def plot_rmsd_variance_by_entry_and_tool(rmsd_df: pd.DataFrame, output_dir: str | Path | None = None):
+    """
+    Plots the variance of ligand RMSDs for each docking tool (intra-tool comparisons only) and each entry.
+    """
+    # Filter for intra-tool comparisons only
+    intra_tool = rmsd_df[rmsd_df['tool1'] == rmsd_df['tool2']].copy()
+    intra_tool['tool'] = intra_tool['tool1']  # Add unified 'tool' column
+
+    # Compute RMSD variance for each Entry-tool pair
+    variances  = (
+        intra_tool
+        .groupby(['Entry', 'tool'])['ligand_rmsd']
+        .var()
+        .reset_index()
+        .rename(columns={'ligand_rmsd': 'RMSD variance'})
+    )
+
+    # Plot 
+    fig, ax = plt.subplots()
+    sns.barplot(data=variances, x='Entry', y='RMSD variance', hue='tool', ax=ax, palette='Set2')
+    ax.set_title("Ligand RMSD variance within each tool per entry",  pad=30)
+    ax.set_ylabel("Ligand RMSD variance")
+    ax.set_xlabel("Entry")
+    ax.tick_params(axis='x', rotation=45)
+
+    clean_plt(ax)
+    plt.tight_layout()
+
+    # Save or show
+    if output_dir:
+        output_path = Path(output_dir) / "entry_tool_rmsd_variance.png"
+        plt.savefig(output_path)
+    else:
+        plt.show()
+    
+    return variances
 
 
 
@@ -215,18 +294,25 @@ class LigandRMSD(Step):
                 entry_name = docked_structure1_name.split('_')[0]
                 squidly_residues = df.loc[df[self.entry_col] == entry_name.strip(), 'Squidly_CR_Position']
 
+                tool1_name = get_tool_from_structure_name(docked_structure1_name)
+                tool2_name  = get_tool_from_structure_name(docked_structure2_name)
+
                 rmsd_values.append({
                     'Entry': entry_name, 
                     'pdb_file': pdb_file_path.name,  # Store the name of the PDB file
                     'docked_structure1' : docked_structure1_name, 
                     'docked_structure2' : docked_structure2_name, 
+                    'tool1' : tool1_name, 
+                    'tool2': tool2_name,
                     'ligand_rmsd': symm_rmsd_value,   # Store the calculated RMSD value
                     'Squidly_CR_Position': squidly_residues.iloc[0] if not squidly_residues.empty else None
                 })
 
-        # Convert the list of dictionaries into a DataFrame
+        # Convert the list of dictionaries into a df
         rmsd_df = pd.DataFrame(rmsd_values)
 
+        # Plot the within-tool variance
+        rmsd_variances  = plot_rmsd_variance_by_entry_and_tool(rmsd_df, output_dir=self.output_dir)
 
         # If heatmaps are to be visualized, call the visualization function
         if self.visualize_heatmaps:
@@ -235,7 +321,16 @@ class LigandRMSD(Step):
             visualize_rmsd_by_entry(rmsd_df, output_dir=heatmap_output_dir)
 
         # Select the best docked structures based on RMSD
-        select_best_docked_structures(rmsd_df, output_dir=self.output_dir)
+        best_docked_structure_df = select_best_docked_structures(rmsd_df)
+
+
+        # Merge best_docked_structure_df and rmsd_variances df
+        #rmsd_df['tool'] = rmsd_df.apply(lambda row: row['tool1'] if row['tool1'] == row['tool2'] else np.nan, axis=1)
+        best_docked_structure_df = best_docked_structure_df.merge(rmsd_variances, on=['Entry', 'tool'], how='left')
+
+        output_path = Path(self.output_dir) / "best_docked_structures.csv"
+        best_docked_structure_df.to_csv(output_path, index=False)
+        logger.info(f"Best docked structures (per tool) saved to: {output_path}")
 
         # Save the DataFrame as a csv file
         csv_file = Path(self.output_dir) / "ligand_rmsd.csv"
