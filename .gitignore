@@ -3,6 +3,7 @@ manuscript/data/*.csv
 manuscript/data/*.json
 manuscript/data/*.pkl
 manuscript/finetuning
+manuscript/esm2
 
 
 # ---------------- data ignores
